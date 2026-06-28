@@ -14,7 +14,7 @@ app.use(express.static('public'));
 
 const sessions = {};
 
-// ================== BOT HANDLER ==================
+// ================== BOT MESSAGE HANDLER ==================
 function setupBot(sock, phoneNumber) {
     const BOT_NAME = "NK PROFESSIONAL";
     const CREATOR = "NK";
@@ -108,6 +108,7 @@ app.post('/api/pair', async (req, res) => {
         return res.json({ success: true, code: 'ALREADY_CONNECTED', message: 'Bot already connected for this number.' });
     }
 
+    // Try pairing first
     try {
         const sessionPath = `./sessions/${phoneNumber}`;
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
@@ -115,54 +116,86 @@ app.post('/api/pair', async (req, res) => {
         const sock = makeWASocket({
             auth: state,
             logger: Pino({ level: 'silent' }),
-            browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0']
+            browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0'],
+            markOnlineOnConnect: false,
+            syncFullHistory: false
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // Try pairing code
+        // Request pairing code
         let code = await sock.requestPairingCode(phoneNumber);
         const formattedCode = code.match(/.{1,3}/g).join('-');
 
+        // Store session
         sessions[phoneNumber] = sock;
         setupBot(sock, phoneNumber);
 
         return res.json({ success: true, code: formattedCode });
 
-    } catch (err) {
-        console.error('Pairing Error:', err);
+    } catch (pairingErr) {
+        console.error('Pairing Error:', pairingErr.message);
 
-        // Fallback: Generate QR code image
+        // ---------- FALLBACK: QR CODE ----------
         try {
+            // Create a fresh auth state for fallback
+            const fallbackSessionPath = `./sessions/${phoneNumber}_fallback`;
+            const { state: fallbackState, saveCreds: fallbackSave } = await useMultiFileAuthState(fallbackSessionPath);
+
             const fallbackSock = makeWASocket({
-                auth: state,
+                auth: fallbackState,
                 logger: Pino({ level: 'silent' }),
-                browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0']
+                browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0'],
+                markOnlineOnConnect: false,
+                syncFullHistory: false
             });
 
+            fallbackSock.ev.on('creds.update', fallbackSave);
+
+            // Wait for QR code
             const qrPromise = new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => reject(new Error('QR timeout')), 30000);
+                const timeout = setTimeout(() => reject(new Error('QR timeout (30s)')), 30000);
                 fallbackSock.ev.on('connection.update', async (update) => {
                     if (update.qr) {
                         clearTimeout(timeout);
-                        const qrImage = await QRCode.toDataURL(update.qr);
-                        resolve({ qrImage });
+                        resolve(update.qr);
+                    }
+                    if (update.connection === 'close') {
+                        clearTimeout(timeout);
+                        reject(new Error('Connection closed before QR'));
                     }
                 });
             });
 
-            const result = await qrPromise;
+            const qrData = await qrPromise;
+            const qrImage = await QRCode.toDataURL(qrData);
+
+            // Store the fallback socket for later use (if QR scan completes)
+            // We can set up a listener for connection open later, but for now we just return QR.
+            // To keep it simple, we'll just return QR image and let user scan.
+            // The bot will auto-connect when QR is scanned, but we won't store it yet because we don't know if it will succeed.
+            // We'll store it on connection open later.
+
+            // Also listen for connection open to store the session
+            fallbackSock.ev.on('connection.update', (upd) => {
+                if (upd.connection === 'open') {
+                    console.log(`✅ QR connected for ${phoneNumber}`);
+                    sessions[phoneNumber] = fallbackSock;
+                    setupBot(fallbackSock, phoneNumber);
+                }
+            });
+
             return res.json({
                 success: false,
                 error: 'Pairing failed. Use QR code.',
                 fallback: true,
-                qrImage: result.qrImage,
-                instruction: 'Scan with WhatsApp → Linked Devices → Link with device'
+                qrImage: qrImage,
+                instruction: 'Scan this QR code using WhatsApp → Linked Devices → Link with device'
             });
 
-        } catch (fallbackErr) {
-            console.error('QR fallback failed:', fallbackErr);
-            return res.status(500).json({ success: false, error: 'Both pairing and QR failed.' });
+        } catch (qrErr) {
+            console.error('QR fallback failed:', qrErr.message);
+            return res.status(500).json({ success: false, error: 'Both pairing and QR fallback failed. Please try again later.' });
         }
     }
 });
