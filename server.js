@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const Pino = require('pino');
 const axios = require('axios');
+const QRCode = require('qrcode-terminal');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { downloadMedia } = require('./downloaders');
 
@@ -56,13 +57,11 @@ function setupBot(sock, phoneNumber) {
             const msgLower = text.toLowerCase().trim();
             const jid = m.key.remoteJid;
 
-            // .alive Command
             if (msgLower === '.alive') {
                 await sock.sendMessage(jid, { text: ALIVE_MSG });
                 continue;
             }
 
-            // Video Download
             const urls = text.match(/https?:\/\/[^\s]+/g);
             if (!urls) continue;
 
@@ -102,12 +101,11 @@ function setupBot(sock, phoneNumber) {
     });
 }
 
-// ================== PAIRING API ==================
+// ================== PAIRING API (FIXED: Waits for connection) ==================
 app.post('/api/pair', async (req, res) => {
     const { phoneNumber } = req.body;
     if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
 
-    // Check if already connected
     if (sessions[phoneNumber]) {
         return res.json({ success: true, code: 'ALREADY_CONNECTED', message: 'Bot already connected for this number.' });
     }
@@ -115,41 +113,61 @@ app.post('/api/pair', async (req, res) => {
     try {
         const sessionPath = `./sessions/${phoneNumber}`;
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+
+        // ========== CREATE SOCKET ==========
         const sock = makeWASocket({
             auth: state,
             logger: Pino({ level: 'silent' }),
-            browser: ['NK Professional', 'Chrome', '1.0']
+            browser: ['NK Professional', 'Chrome', '1.0'],
+            printQRInTerminal: true // Fallback if pairing fails
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // Listen for connection status
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect } = update;
-            if (connection === 'open') {
-                console.log(`✅ Bot connected for ${phoneNumber}`);
-                sessions[phoneNumber] = sock;
-                setupBot(sock, phoneNumber);
-            }
-            if (connection === 'close') {
-                if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-                    console.log(`Reconnecting for ${phoneNumber}...`);
-                    // Reconnect logic can be added if needed
-                } else {
-                    delete sessions[phoneNumber];
+        // ========== WAIT FOR CONNECTION TO BE READY ==========
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Connection timeout (30s)')), 30000);
+            
+            const handler = (update) => {
+                const { connection, lastDisconnect } = update;
+                if (connection === 'open') {
+                    clearTimeout(timeout);
+                    sock.ev.off('connection.update', handler);
+                    resolve();
                 }
-            }
+                if (connection === 'close') {
+                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                    if (!shouldReconnect) {
+                        clearTimeout(timeout);
+                        sock.ev.off('connection.update', handler);
+                        reject(new Error('Logged out or closed'));
+                    }
+                }
+            };
+            sock.ev.on('connection.update', handler);
         });
 
-        // Request Pairing Code
+        // ========== REQUEST PAIRING CODE (Now socket is ready) ==========
+        console.log(`Generating pairing code for ${phoneNumber}...`);
         let code = await sock.requestPairingCode(phoneNumber);
-        // Format code nicely (e.g., 123-456-789)
+        
+        // Format code
         const formattedCode = code.match(/.{1,3}/g).join('-');
+
+        // Store session for later if needed (bot will auto reconnect via creds)
+        sessions[phoneNumber] = sock;
+        setupBot(sock, phoneNumber);
+
         return res.json({ success: true, code: formattedCode });
 
     } catch (err) {
-        console.error(err);
-        return res.status(500).json({ success: false, error: err.message });
+        console.error("Pairing Error:", err);
+        // Fallback: Agar pairing fail ho (IP block), toh QR code method batao
+        return res.status(500).json({ 
+            success: false, 
+            error: err.message,
+            fallback: "Pairing failed. Try QR code method (will be shown on next try) or use a different network."
+        });
     }
 });
 
