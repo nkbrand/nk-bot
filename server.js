@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const Pino = require('pino');
 const axios = require('axios');
-const QRCode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { downloadMedia } = require('./downloaders');
 
@@ -13,7 +13,6 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static('public'));
 
-// Active Sessions Store
 const sessions = {};
 
 // ================== BOT MESSAGE HANDLER ==================
@@ -101,7 +100,7 @@ function setupBot(sock, phoneNumber) {
     });
 }
 
-// ================== PAIRING API (FIXED: Waits for connection) ==================
+// ================== PAIRING API (Direct Request, No Wait) ==================
 app.post('/api/pair', async (req, res) => {
     const { phoneNumber } = req.body;
     if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
@@ -114,60 +113,68 @@ app.post('/api/pair', async (req, res) => {
         const sessionPath = `./sessions/${phoneNumber}`;
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
-        // ========== CREATE SOCKET ==========
+        // Create socket with mobile browser to reduce bot detection
         const sock = makeWASocket({
             auth: state,
             logger: Pino({ level: 'silent' }),
-            browser: ['NK Professional', 'Chrome', '1.0'],
-            printQRInTerminal: true // Fallback if pairing fails
+            browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0'],
+            syncFullHistory: false,
+            markOnlineOnConnect: false
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // ========== WAIT FOR CONNECTION TO BE READY ==========
-        await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('Connection timeout (30s)')), 30000);
-            
-            const handler = (update) => {
-                const { connection, lastDisconnect } = update;
-                if (connection === 'open') {
-                    clearTimeout(timeout);
-                    sock.ev.off('connection.update', handler);
-                    resolve();
-                }
-                if (connection === 'close') {
-                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-                    if (!shouldReconnect) {
-                        clearTimeout(timeout);
-                        sock.ev.off('connection.update', handler);
-                        reject(new Error('Logged out or closed'));
-                    }
-                }
-            };
-            sock.ev.on('connection.update', handler);
-        });
-
-        // ========== REQUEST PAIRING CODE (Now socket is ready) ==========
-        console.log(`Generating pairing code for ${phoneNumber}...`);
+        // Request pairing code immediately (no waiting)
         let code = await sock.requestPairingCode(phoneNumber);
-        
-        // Format code
         const formattedCode = code.match(/.{1,3}/g).join('-');
 
-        // Store session for later if needed (bot will auto reconnect via creds)
+        // Store session for message handling
         sessions[phoneNumber] = sock;
         setupBot(sock, phoneNumber);
 
         return res.json({ success: true, code: formattedCode });
 
     } catch (err) {
-        console.error("Pairing Error:", err);
-        // Fallback: Agar pairing fail ho (IP block), toh QR code method batao
-        return res.status(500).json({ 
-            success: false, 
-            error: err.message,
-            fallback: "Pairing failed. Try QR code method (will be shown on next try) or use a different network."
-        });
+        console.error('Pairing Error:', err);
+        // If pairing fails, try to generate QR code as fallback
+        try {
+            // Create a new socket to get QR
+            const fallbackSock = makeWASocket({
+                auth: state,
+                logger: Pino({ level: 'silent' }),
+                browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0']
+            });
+            
+            // Wait for QR event
+            const qrPromise = new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('QR timeout')), 30000);
+                fallbackSock.ev.on('connection.update', async (update) => {
+                    if (update.qr) {
+                        clearTimeout(timeout);
+                        const qrData = update.qr;
+                        // Convert QR to base64 image
+                        const qrImage = await QRCode.toDataURL(qrData);
+                        resolve({ qrImage });
+                    }
+                });
+            });
+
+            const result = await qrPromise;
+            return res.json({ 
+                success: false, 
+                error: 'Pairing code failed. Use QR code instead.',
+                fallback: true,
+                qrImage: result.qrImage,
+                instruction: 'Scan this QR code using WhatsApp → Linked Devices → Link with device'
+            });
+
+        } catch (fallbackErr) {
+            console.error('Fallback QR failed:', fallbackErr);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Both pairing and QR fallback failed. Check server logs.'
+            });
+        }
     }
 });
 
@@ -176,7 +183,6 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ================== START SERVER ==================
 app.listen(PORT, () => {
-    console.log(`🚀 NK Professional Bot Server is running on port ${PORT}`);
+    console.log(`🚀 NK Professional Bot Server running on port ${PORT}`);
 });
