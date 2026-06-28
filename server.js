@@ -2,7 +2,6 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const Pino = require('pino');
-const axios = require('axios');
 const QRCode = require('qrcode');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { downloadMedia } = require('./downloaders');
@@ -15,7 +14,7 @@ app.use(express.static('public'));
 
 const sessions = {};
 
-// ================== BOT MESSAGE HANDLER ==================
+// ================== BOT HANDLER ==================
 function setupBot(sock, phoneNumber) {
     const BOT_NAME = "NK PROFESSIONAL";
     const CREATOR = "NK";
@@ -100,7 +99,7 @@ function setupBot(sock, phoneNumber) {
     });
 }
 
-// ================== PAIRING API (Direct Request, No Wait) ==================
+// ================== PAIRING API ==================
 app.post('/api/pair', async (req, res) => {
     const { phoneNumber } = req.body;
     if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
@@ -113,22 +112,18 @@ app.post('/api/pair', async (req, res) => {
         const sessionPath = `./sessions/${phoneNumber}`;
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
-        // Create socket with mobile browser to reduce bot detection
         const sock = makeWASocket({
             auth: state,
             logger: Pino({ level: 'silent' }),
-            browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0'],
-            syncFullHistory: false,
-            markOnlineOnConnect: false
+            browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0']
         });
 
         sock.ev.on('creds.update', saveCreds);
 
-        // Request pairing code immediately (no waiting)
+        // Try pairing code
         let code = await sock.requestPairingCode(phoneNumber);
         const formattedCode = code.match(/.{1,3}/g).join('-');
 
-        // Store session for message handling
         sessions[phoneNumber] = sock;
         setupBot(sock, phoneNumber);
 
@@ -136,44 +131,38 @@ app.post('/api/pair', async (req, res) => {
 
     } catch (err) {
         console.error('Pairing Error:', err);
-        // If pairing fails, try to generate QR code as fallback
+
+        // Fallback: Generate QR code image
         try {
-            // Create a new socket to get QR
             const fallbackSock = makeWASocket({
                 auth: state,
                 logger: Pino({ level: 'silent' }),
                 browser: ['Chrome (Linux)', 'Chrome', '120.0.0.0']
             });
-            
-            // Wait for QR event
+
             const qrPromise = new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error('QR timeout')), 30000);
                 fallbackSock.ev.on('connection.update', async (update) => {
                     if (update.qr) {
                         clearTimeout(timeout);
-                        const qrData = update.qr;
-                        // Convert QR to base64 image
-                        const qrImage = await QRCode.toDataURL(qrData);
+                        const qrImage = await QRCode.toDataURL(update.qr);
                         resolve({ qrImage });
                     }
                 });
             });
 
             const result = await qrPromise;
-            return res.json({ 
-                success: false, 
-                error: 'Pairing code failed. Use QR code instead.',
+            return res.json({
+                success: false,
+                error: 'Pairing failed. Use QR code.',
                 fallback: true,
                 qrImage: result.qrImage,
-                instruction: 'Scan this QR code using WhatsApp → Linked Devices → Link with device'
+                instruction: 'Scan with WhatsApp → Linked Devices → Link with device'
             });
 
         } catch (fallbackErr) {
-            console.error('Fallback QR failed:', fallbackErr);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Both pairing and QR fallback failed. Check server logs.'
-            });
+            console.error('QR fallback failed:', fallbackErr);
+            return res.status(500).json({ success: false, error: 'Both pairing and QR failed.' });
         }
     }
 });
