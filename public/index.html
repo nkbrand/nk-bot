@@ -1,205 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NK Professional Bot</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        body {
-            background: linear-gradient(145deg, #0b0e14 0%, #1a1f2b 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .card {
-            background: rgba(26, 31, 43, 0.8);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 32px;
-            padding: 48px 40px;
-            max-width: 480px;
-            width: 100%;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.8);
-            transition: all 0.3s ease;
-        }
-        .badge {
-            display: inline-block;
-            background: #00e676;
-            color: #0b0e14;
-            font-weight: 700;
-            font-size: 12px;
-            padding: 4px 12px;
-            border-radius: 20px;
-            letter-spacing: 1px;
-            margin-bottom: 16px;
-        }
-        h1 {
-            color: #ffffff;
-            font-size: 28px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        h1 span {
-            background: linear-gradient(135deg, #00e676, #00bcd4);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .subtitle {
-            color: #8892b0;
-            font-size: 14px;
-            margin-bottom: 32px;
-            border-left: 3px solid #00e676;
-            padding-left: 12px;
-        }
-        .input-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            color: #ccd6f6;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-        input {
-            width: 100%;
-            padding: 14px 18px;
-            border-radius: 12px;
-            border: 1px solid #2d3548;
-            background: #141a24;
-            color: #ffffff;
-            font-size: 16px;
-            outline: none;
-            transition: 0.3s;
-        }
-        input:focus {
-            border-color: #00e676;
-            box-shadow: 0 0 0 3px rgba(0, 230, 118, 0.2);
-        }
-        .btn {
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.3s;
-            background: linear-gradient(135deg, #00e676, #00bcd4);
-            color: #0b0e14;
-        }
-        .btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 8px 25px rgba(0, 230, 118, 0.3);
-        }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        #status {
-            margin-top: 20px;
-            padding: 16px;
-            border-radius: 12px;
-            background: #141a24;
-            border: 1px solid #2d3548;
-            color: #ccd6f6;
-            font-size: 14px;
-            min-height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            transition: 0.3s;
-        }
-        .code-display {
-            font-size: 28px;
-            font-weight: 700;
-            letter-spacing: 4px;
-            color: #00e676;
-            background: #0b0e14;
-            padding: 12px 20px;
-            border-radius: 12px;
-            margin: 10px 0;
-            border: 1px dashed #00e676;
-        }
-        .footer {
-            margin-top: 32px;
-            padding-top: 20px;
-            border-top: 1px solid #2d3548;
-            display: flex;
-            justify-content: space-between;
-            color: #495670;
-            font-size: 12px;
-        }
-        .footer span {
-            color: #00e676;
-        }
-        .coming-soon {
-            background: rgba(0, 230, 118, 0.05);
-            border-radius: 8px;
-            padding: 8px 12px;
-            margin-top: 12px;
-            color: #00bcd4;
-            font-size: 13px;
-            text-align: center;
-        }
-        .spinner {
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            border: 3px solid #2d3548;
-            border-top: 3px solid #00e676;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
-            vertical-align: middle;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-
-<div class="card">
-    <div class="badge">⚡ ULTRA FAST</div>
-    <h1>NK <span>PROFESSIONAL</span></h1>
-    <div class="subtitle">WhatsApp Bot • v3.0.0 • Creator: NK</div>
-
-    <div class="input-group">
-        <label>📱 WhatsApp Number</label>
-        <input type="text" id="phoneInput" placeholder="92300xxxxxxx" value="923083016818">
-    </div>
-
-    <button class="btn" id="connectBtn">🚀 Connect Bot</button>
-
-    <div id="status">
-        <span>Enter your number & click connect.</span>
-    </div>
-
-    <div class="coming-soon">
-        🚀 Coming Soon: YouTube, Instagram, AI Commands & More!
-    </div>
-
-    <div class="footer">
-        <span>NK</span>
-        <span>© 2026 • All rights reserved</span>
-    </div>
-</div>
-
 <script>
     document.getElementById('connectBtn').addEventListener('click', async function() {
         const phone = document.getElementById('phoneInput').value.trim();
@@ -213,7 +11,7 @@
 
         btn.disabled = true;
         btn.textContent = '⏳ Generating...';
-        statusDiv.innerHTML = '<span class="spinner"></span> Requesting pairing code from WhatsApp...';
+        statusDiv.innerHTML = '<span class="spinner"></span> Requesting pairing code...';
 
         try {
             const response = await fetch('/api/pair', {
@@ -233,10 +31,19 @@
                         <div class="code-display">${data.code}</div>
                         <div style="font-size:13px; color:#8892b0; margin-top:8px;">
                             Open WhatsApp → Linked Devices → Link with phone number<br>
-                            Enter this code. Bot will connect automatically in a few seconds!
+                            Enter this code. Bot will connect automatically!
                         </div>
                     `;
                 }
+            } else if (data.fallback && data.qrImage) {
+                // Show QR code fallback
+                statusDiv.innerHTML = `
+                    ❌ Pairing failed. Please scan this QR code with WhatsApp:<br>
+                    <img src="${data.qrImage}" style="max-width:200px; margin: 10px auto; display:block; border-radius:12px; border:2px solid #00e676;" />
+                    <div style="font-size:13px; color:#8892b0;">
+                        ${data.instruction}
+                    </div>
+                `;
             } else {
                 statusDiv.innerHTML = `❌ Error: ${data.error || 'Something went wrong. Try again.'}`;
             }
@@ -248,6 +55,3 @@
         btn.textContent = '🚀 Connect Bot';
     });
 </script>
-
-</body>
-</html>
